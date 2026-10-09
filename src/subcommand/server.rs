@@ -9160,13 +9160,13 @@ next
       .index_addresses()
       .build();
 
-    server.assert_response(
+    server.assert_response_regex(
       format!(
         "/r/address/{}/inscriptions",
         default_address(Chain::Mainnet)
       ),
       StatusCode::BAD_REQUEST,
-      "address bc1",
+      "network",
     );
   }
 
@@ -9191,7 +9191,7 @@ next
   }
 
   #[test]
-  fn recursive_address_inscriptions_are_paginated_without_transaction_lookups() {
+  fn recursive_address_inscriptions_are_paginated_without_transaction_index() {
     let server = TestServer::builder()
       .chain(Chain::Regtest)
       .index_addresses()
