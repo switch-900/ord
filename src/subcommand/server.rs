@@ -9140,6 +9140,133 @@ next
   }
 
   #[test]
+  fn recursive_address_inscriptions_requires_address_index() {
+    let server = TestServer::builder().chain(Chain::Regtest).build();
+
+    server.assert_response(
+      format!(
+        "/r/address/{}/inscriptions",
+        default_address(Chain::Regtest)
+      ),
+      StatusCode::NOT_FOUND,
+      "this server has no address index",
+    );
+  }
+
+  #[test]
+  fn recursive_address_inscriptions_rejects_wrong_network() {
+    let server = TestServer::builder()
+      .chain(Chain::Regtest)
+      .index_addresses()
+      .build();
+
+    server.assert_response(
+      format!(
+        "/r/address/{}/inscriptions",
+        default_address(Chain::Mainnet)
+      ),
+      StatusCode::BAD_REQUEST,
+      "address bc1",
+    );
+  }
+
+  #[test]
+  fn recursive_address_inscriptions_empty() {
+    let server = TestServer::builder()
+      .chain(Chain::Regtest)
+      .index_addresses()
+      .build();
+
+    pretty_assert_eq!(
+      server.get_json::<api::Inscriptions>(format!(
+        "/r/address/{}/inscriptions",
+        default_address(Chain::Regtest)
+      )),
+      api::Inscriptions {
+        ids: Vec::new(),
+        more: false,
+        page_index: 0,
+      }
+    );
+  }
+
+  #[test]
+  fn recursive_address_inscriptions_are_paginated_without_transaction_lookups() {
+    let server = TestServer::builder()
+      .chain(Chain::Regtest)
+      .index_addresses()
+      .build();
+
+    server.mine_blocks(2);
+
+    let first_txid = server.core.broadcast_tx(TransactionTemplate {
+      inputs: &[(
+        1,
+        0,
+        0,
+        inscription("text/plain;charset=utf-8", "first").to_witness(),
+      )],
+      ..default()
+    });
+
+    let address = server.core.address(OutPoint {
+      txid: first_txid,
+      vout: 0,
+    });
+
+    let second_txid = server.core.broadcast_tx(TransactionTemplate {
+      inputs: &[(
+        2,
+        0,
+        0,
+        inscription("text/plain;charset=utf-8", "second").to_witness(),
+      )],
+      recipient: Some(address.clone()),
+      ..default()
+    });
+
+    server.mine_blocks(1);
+
+    let first_id = InscriptionId {
+      txid: first_txid,
+      index: 0,
+    };
+    let second_id = InscriptionId {
+      txid: second_txid,
+      index: 0,
+    };
+
+    let (first_page, more) = server
+      .index
+      .get_inscriptions_by_address_paginated(&address, 1, 0)
+      .unwrap()
+      .unwrap();
+
+    pretty_assert_eq!(first_page, vec![first_id]);
+    assert!(more);
+
+    let (second_page, more) = server
+      .index
+      .get_inscriptions_by_address_paginated(&address, 1, 1)
+      .unwrap()
+      .unwrap();
+
+    pretty_assert_eq!(second_page, vec![second_id]);
+    assert!(!more);
+
+    pretty_assert_eq!(
+      server.get_json::<api::Inscriptions>(format!(
+        "/r/address/{address}/inscriptions"
+      )),
+      api::Inscriptions {
+        ids: vec![first_id, second_id],
+        more: false,
+        page_index: 0,
+      }
+    );
+  }
+
+  #[test]
   fn sat_inscription_at_index_content_endpoint() {
     let server = TestServer::builder()
       .index_sats()
