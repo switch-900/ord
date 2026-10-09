@@ -9236,13 +9236,36 @@ next
       index: 0,
     };
 
+    let mut expected = vec![
+      (
+        OutPoint {
+          txid: first_txid,
+          vout: 0,
+        },
+        first_id,
+      ),
+      (
+        OutPoint {
+          txid: second_txid,
+          vout: 0,
+        },
+        second_id,
+      ),
+    ];
+    expected.sort_by_key(|(outpoint, _)| *outpoint);
+
+    let expected_ids = expected
+      .into_iter()
+      .map(|(_, inscription_id)| inscription_id)
+      .collect::<Vec<_>>();
+
     let (first_page, more) = server
       .index
       .get_inscriptions_by_address_paginated(&address, 1, 0)
       .unwrap()
       .unwrap();
 
-    pretty_assert_eq!(first_page, vec![first_id]);
+    pretty_assert_eq!(first_page, vec![expected_ids[0]]);
     assert!(more);
 
     let (second_page, more) = server
@@ -9251,7 +9274,7 @@ next
       .unwrap()
       .unwrap();
 
-    pretty_assert_eq!(second_page, vec![second_id]);
+    pretty_assert_eq!(second_page, vec![expected_ids[1]]);
     assert!(!more);
 
     pretty_assert_eq!(
@@ -9259,7 +9282,7 @@ next
         "/r/address/{address}/inscriptions"
       )),
       api::Inscriptions {
-        ids: vec![first_id, second_id],
+        ids: expected_ids,
         more: false,
         page_index: 0,
       }
