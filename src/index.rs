@@ -2542,6 +2542,70 @@ impl Index {
       .map(Some)
   }
 
+  pub(crate) fn get_inscriptions_by_address_paginated(
+    &self,
+    address: &Address,
+    page_size: usize,
+    page: usize,
+  ) -> Result<Option<(Vec<InscriptionId>, bool)>> {
+    if !self.has_address_index() || !self.has_inscription_index() {
+      return Ok(None);
+    }
+
+    let start = page_size
+      .checked_mul(page)
+      .ok_or_else(|| anyhow!("page index {page} out of range"))?;
+
+    let rtx = self.database.begin_read()?;
+
+    let mut outpoints = rtx
+      .open_multimap_table(SCRIPT_PUBKEY_TO_OUTPOINT)?
+      .get(address.script_pubkey().as_bytes())?
+      .map(|result| {
+        result
+          .map_err(|err| anyhow!(err))
+          .map(|value| OutPoint::load(value.value()))
+      })
+      .collect::<Result<Vec<_>>>()?;
+
+    outpoints.sort();
+
+    let outpoint_to_utxo_entry = rtx.open_table(OUTPOINT_TO_UTXO_ENTRY)?;
+    let sequence_number_to_inscription_entry =
+      rtx.open_table(SEQUENCE_NUMBER_TO_INSCRIPTION_ENTRY)?;
+
+    let mut skipped = 0;
+    let mut ids = Vec::with_capacity(page_size.saturating_add(1));
+
+    'outputs: for outpoint in outpoints {
+      let Some(inscriptions) = self.inscriptions_on_output(
+        &outpoint_to_utxo_entry,
+        &sequence_number_to_inscription_entry,
+        outpoint,
+      )? else {
+        return Ok(None);
+      };
+
+      for (_, inscription_id) in inscriptions {
+        if skipped < start {
+          skipped += 1;
+          continue;
+        }
+
+        ids.push(inscription_id);
+
+        if ids.len() > page_size {
+          break 'outputs;
+        }
+      }
+    }
+
+    let more = ids.len() > page_size;
+    ids.truncate(page_size);
+
+    Ok(Some((ids, more)))
+  }
+
   pub fn get_address_info(&self, address: &Address) -> Result<Vec<OutPoint>> {
     self
       .database
