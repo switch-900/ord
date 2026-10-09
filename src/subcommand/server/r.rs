@@ -1,5 +1,58 @@
 use super::*;
 
+pub(super) async fn address_inscriptions(
+  Extension(server_config): Extension<Arc<ServerConfig>>,
+  Extension(index): Extension<Arc<Index>>,
+  Path(address): Path<Address<NetworkUnchecked>>,
+) -> ServerResult {
+  address_inscriptions_paginated(
+    Extension(server_config),
+    Extension(index),
+    Path((address, 0)),
+  )
+  .await
+}
+
+pub(super) async fn address_inscriptions_paginated(
+  Extension(server_config): Extension<Arc<ServerConfig>>,
+  Extension(index): Extension<Arc<Index>>,
+  Path((address, page)): Path<(Address<NetworkUnchecked>, usize)>,
+) -> ServerResult {
+  task::block_in_place(|| {
+    if !index.has_address_index() {
+      return Err(ServerError::NotFound(
+        "this server has no address index".to_string(),
+      ));
+    }
+
+    if !index.has_inscription_index() {
+      return Err(ServerError::NotFound(
+        "this server has no inscriptions index".to_string(),
+      ));
+    }
+
+    let address = address
+      .require_network(server_config.chain.network())
+      .map_err(|err| ServerError::BadRequest(err.to_string()))?;
+
+    let (ids, more) = index
+      .get_inscriptions_by_address_paginated(&address, 100, page)?
+      .ok_or_else(|| ServerError::NotFound("required index unavailable".to_string()))?;
+
+    let page_index =
+      u32::try_from(page).map_err(|_| anyhow!("page index {page} out of range"))?;
+
+    Ok(
+      Json(api::Inscriptions {
+        ids,
+        more,
+        page_index,
+      })
+      .into_response(),
+    )
+  })
+}
+
 pub(super) async fn block(
   Extension(index): Extension<Arc<Index>>,
   Path(DeserializeFromStr(query)): Path<DeserializeFromStr<query::Block>>,
