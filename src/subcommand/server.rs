@@ -286,6 +286,14 @@ impl Server {
         .route("/blockhash/{height}", get(r::block_hash_from_height_string))
         .route("/blockheight", get(r::blockheight_string))
         .route("/blocktime", get(r::blocktime_string))
+        .route(
+          "/r/address/{address}/inscriptions",
+          get(r::address_inscriptions),
+        )
+        .route(
+          "/r/address/{address}/inscriptions/{page}",
+          get(r::address_inscriptions_paginated),
+        )
         .route("/r/block/{query}", get(r::block))
         .route("/r/blockhash", get(r::blockhash))
         .route("/r/blockhash/{height}", get(r::blockhash_at_height))
